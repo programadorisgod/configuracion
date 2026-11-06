@@ -1,0 +1,4 @@
+ESP_PATH="/boot"
+KERNEL_CMDLINE[default]+="quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=0daa1308-ac14-44d7-b23f-277c361b11d1"
+BOOT_ORDER="*, *lts, *fallback, Snapshots"
+KERNEL_CMDLINE[default]+=" resume=/dev/sda2 resume_offset=4069123"

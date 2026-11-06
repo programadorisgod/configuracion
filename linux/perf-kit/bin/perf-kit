@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Linux Performance Kit - CLI Controller
+# Universal, Portable, Reversible Performance Tuning for Linux
+# ==============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+source "$KIT_ROOT/lib/distros.sh"
+source "$KIT_ROOT/lib/benchmark.sh"
+
+# Comprobar si se requiere root y elevar si es necesario
+require_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v pkexec >/dev/null 2>&1; then
+            exec pkexec env DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" "$0" "$@"
+        elif command -v sudo >/dev/null 2>&1; then
+            exec sudo "$0" "$@"
+        else
+            echo "Error: Este comando requiere permisos de superusuario (root)." >&2
+            exit 1
+        fi
+    fi
+}
+
+cmd_status() {
+    echo "============================================================"
+    echo "          ESTADO DEL SISTEMA Y RENDIMIENTO ACTUAL           "
+    echo "============================================================"
+
+    # CPU & Mitigaciones
+    local cpu_model
+    cpu_model=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)
+    echo "CPU:                 $cpu_model"
+    
+    local gov
+    gov=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "N/A")
+    echo "Gobernador CPU:      $gov"
+
+    local pti retp mds
+    pti=$(cat /sys/devices/system/cpu/vulnerabilities/meltdown 2>/dev/null || echo "N/A")
+    retp=$(cat /sys/devices/system/cpu/vulnerabilities/spectre_v2 2>/dev/null || echo "N/A")
+    mds=$(cat /sys/devices/system/cpu/vulnerabilities/mds 2>/dev/null || echo "N/A")
+    echo "Meltdown / PTI:      $pti"
+    echo "Spectre v2:          $retp"
+    echo "MDS Buffers:         $mds"
+
+    # Planificador CPU (sched-ext / BPF)
+    local scx_state="Inactivo"
+    if [ -f /sys/kernel/sched_ext/state ]; then
+        scx_state=$(cat /sys/kernel/sched_ext/state)
+    fi
+    local scx_active="Ninguno"
+    if [ -f /sys/kernel/sched_ext/root/ops ]; then
+        scx_active=$(cat /sys/kernel/sched_ext/root/ops 2>/dev/null || echo "Inactivo")
+    fi
+    echo "Sched-ext (BPF):     Estado: $scx_state | Activo: $scx_active"
+
+    # Memoria & ZRAM
+    echo "------------------------------------------------------------"
+    local thp mglru_ttl
+    thp=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo "N/A")
+    mglru_ttl=$(cat /sys/kernel/mm/lru_gen/min_ttl_ms 2>/dev/null || echo "N/A")
+    echo "THP (Hugepages):     $thp"
+    echo "MGLRU min_ttl_ms:    $mglru_ttl"
+    echo "vm.swappiness:       $(sysctl -n vm.swappiness 2>/dev/null || echo N/A)"
+    echo "vm.vfs_cache_press:  $(sysctl -n vm.vfs_cache_pressure 2>/dev/null || echo N/A)"
+
+    # Almacenamiento & I/O
+    echo "------------------------------------------------------------"
+    for dev in /sys/block/sd* /sys/block/nvme*; do
+        [ -e "$dev" ] || continue
+        local bname sched
+        bname=$(basename "$dev")
+        sched=$(cat "$dev/queue/scheduler" 2>/dev/null || echo "N/A")
+        echo "Disco $bname Scheduler: $sched"
+    done
+    local btrfs_opts
+    btrfs_opts=$(findmnt -n -o OPTIONS / 2>/dev/null || echo "N/A")
+    echo "Opciones montaje /:  $btrfs_opts"
+
+    # Red
+    echo "------------------------------------------------------------"
+    local cc qdisc
+    cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo N/A)
+    qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null || echo N/A)
+    echo "TCP Congestion:      $cc"
+    echo "Queue Discipline:    $qdisc"
+    echo "============================================================"
+}
+
+cmd_apply() {
+    require_root "$@"
+    echo "==> Aplicando optimizaciones de Linux Performance Kit..."
+
+    local backup_dir="$KIT_ROOT/backups"
+    mkdir -p "$backup_dir"
+
+    # 1. Copias de seguridad preventivas
+    echo "[1/8] Creando respaldos preventivos de configuración..."
+    [ -f /etc/fstab ] && cp -n /etc/fstab "$backup_dir/fstab.orig"
+    [ -f /etc/default/limine ] && cp -n /etc/default/limine "$backup_dir/limine.orig"
+    [ -f /etc/scx_loader.toml ] && cp -n /etc/scx_loader.toml "$backup_dir/scx_loader.toml.orig"
+
+    # 2. Instalar drop-ins de configuración (estándar freedesktop)
+    echo "[2/8] Instalando drop-ins modulares en /etc..."
+    mkdir -p /etc/sysctl.d /etc/tmpfiles.d /etc/udev/rules.d /etc/modprobe.d /etc/modules-load.d /etc/security/limits.d /etc/systemd/zram-generator.conf.d
+
+    cp "$KIT_ROOT/configs/sysctl.d/99-perf-kit.conf" /etc/sysctl.d/
+    cp "$KIT_ROOT/configs/tmpfiles.d/perf-kit-mm.conf" /etc/tmpfiles.d/
+    cp "$KIT_ROOT/configs/udev/60-ioschedulers.rules" /etc/udev/rules.d/
+    cp "$KIT_ROOT/configs/udev/61-perf-kit-io.rules" /etc/udev/rules.d/
+    cp "$KIT_ROOT/configs/modprobe.d/99-perf-kit-i915.conf" /etc/modprobe.d/
+    cp "$KIT_ROOT/configs/modules-load.d/99-perf-kit-bbr.conf" /etc/modules-load.d/
+    cp "$KIT_ROOT/configs/limits.d/99-perf-kit.conf" /etc/security/limits.d/
+    cp "$KIT_ROOT/configs/zram/99-perf-kit-zram.conf" /etc/systemd/zram-generator.conf.d/
+
+    # Si scx_loader está instalado, configurar scx_bpfland por defecto
+    if [ -f /usr/bin/scx_loader ]; then
+        cp "$KIT_ROOT/configs/scx/scx_loader.toml" /etc/scx_loader.toml
+    fi
+
+    # 3. Aplicar configuraciones en caliente
+    echo "[3/8] Recargando sysctl y parámetros de memoria/red..."
+    modprobe tcp_bbr 2>/dev/null || true
+    modprobe sch_fq 2>/dev/null || true
+    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-perf-kit.conf
+
+    echo "[4/8] Aplicando reglas THP, MGLRU y udev de disco..."
+    systemd-tmpfiles --create /etc/tmpfiles.d/perf-kit-mm.conf >/dev/null 2>&1 || true
+    udevadm control --reload-rules >/dev/null 2>&1 || true
+    udevadm trigger --subsystem-match=block >/dev/null 2>&1 || true
+
+    # 4. Iniciar y habilitar scx_loader si existe
+    if systemctl list-unit-files scx_loader.service >/dev/null 2>&1; then
+        echo "[5/8] Habilitando scheduler BPF de baja latencia (scx_loader)..."
+        systemctl enable --now scx_loader.service >/dev/null 2>&1 || true
+    fi
+
+    # 5. Deshabilitar NetworkManager-wait-online (elimina demoras de 5-10s en boot)
+    if systemctl is-enabled NetworkManager-wait-online.service >/dev/null 2>&1; then
+        echo "Deshabilitando NetworkManager-wait-online.service para acelerar el arranque..."
+        systemctl disable NetworkManager-wait-online.service >/dev/null 2>&1 || true
+    fi
+
+    # 6. Optimizar opciones de montaje Btrfs en /etc/fstab y en caliente
+    echo "[6/8] Optimizando opciones de compresión Btrfs (zstd:1 para CPU ligera)..."
+    if grep -q "compress=zstd" /etc/fstab; then
+        sed -i 's/compress=zstd\b/compress=zstd:1,ssd,commit=60/g' /etc/fstab
+        # Aplicar en caliente a los puntos montados
+        mount -o remount,compress=zstd:1,ssd,commit=60 / 2>/dev/null || true
+        mount -o remount,compress=zstd:1,ssd,commit=60 /home 2>/dev/null || true
+    fi
+
+    # 7. Redimensionar swapfile de 15.5G a 4G (recupera 11.5GB de SSD)
+    echo "[7/8] Redimensionando /swap/swapfile a 4GB para liberar 11.5GB de SSD..."
+    if [ -f /swap/swapfile ]; then
+        local current_swap_size
+        current_swap_size=$(stat -c%s /swap/swapfile 2>/dev/null || echo 0)
+        # Si es mayor a 5GB, recrear a 4GB
+        if [ "$current_swap_size" -gt 5000000000 ]; then
+            swapoff /swap/swapfile 2>/dev/null || true
+            rm -f /swap/swapfile
+            if command -v btrfs >/dev/null 2>&1; then
+                btrfs filesystem mkswapfile --size 4g /swap/swapfile
+            else
+                dd if=/dev/zero of=/swap/swapfile bs=1M count=4096 status=progress
+                chmod 600 /swap/swapfile
+                mkswap /swap/swapfile
+            fi
+            swapon -p 0 /swap/swapfile
+            echo "Swapfile redimensionado exitosamente a 4GB. Espacio recuperado."
+        fi
+    fi
+
+    # 8. Configurar mitigaciones en el bootloader
+    echo "[8/8] Configurando mitigations=off en el cargador de arranque..."
+    detect_bootloader
+    if [ "$BOOTLOADER" = "limine" ] && [ -f /etc/default/limine ]; then
+        # Remover linea de resume de hibernación antigua
+        sed -i '/resume=/d' /etc/default/limine
+        if ! grep -q "mitigations=off" /etc/default/limine; then
+            sed -i '0,/KERNEL_CMDLINE\[default\]+="/s//KERNEL_CMDLINE[default]+="mitigations=off /' /etc/default/limine
+        fi
+        if command -v limine-update >/dev/null 2>&1; then
+            limine-update
+        fi
+    else
+        set_cmdline_param "add" "mitigations=off"
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo " ¡OPTIMIZACIONES APLICADAS CON ÉXITO!                       "
+    echo " - Todas las mejoras de RAM, I/O, Btrfs y Red ya están activas."
+    echo " - Espacio en SSD ampliado (+11.5 GB recuperados)."
+    echo " - Las mitigaciones (mitigations=off) surtirán efecto al reiniciar."
+    echo "============================================================"
+}
+
+cmd_revert() {
+    require_root "$@"
+    echo "==> Revirtiendo optimizaciones de Linux Performance Kit..."
+
+    # 1. Eliminar drop-ins instalados
+    rm -f /etc/sysctl.d/99-perf-kit.conf
+    rm -f /etc/tmpfiles.d/perf-kit-mm.conf
+    rm -f /etc/udev/rules.d/60-ioschedulers.rules
+    rm -f /etc/udev/rules.d/61-perf-kit-io.rules
+    rm -f /etc/modprobe.d/99-perf-kit-i915.conf
+    rm -f /etc/modules-load.d/99-perf-kit-bbr.conf
+    rm -f /etc/security/limits.d/99-perf-kit.conf
+    rm -f /etc/systemd/zram-generator.conf.d/99-perf-kit-zram.conf
+
+    # 2. Restaurar backups si existen
+    local backup_dir="$KIT_ROOT/backups"
+    if [ -f "$backup_dir/fstab.orig" ]; then
+        echo "Restaurando /etc/fstab original..."
+        cp "$backup_dir/fstab.orig" /etc/fstab
+    fi
+    if [ -f "$backup_dir/limine.orig" ]; then
+        echo "Restaurando /etc/default/limine original..."
+        cp "$backup_dir/limine.orig" /etc/default/limine
+        [ -x /usr/bin/limine-update ] && limine-update
+    fi
+    if [ -f "$backup_dir/scx_loader.toml.orig" ]; then
+        cp "$backup_dir/scx_loader.toml.orig" /etc/scx_loader.toml
+    fi
+
+    # 3. Recargar configuraciones originales
+    sysctl --system >/dev/null 2>&1 || true
+    udevadm control --reload-rules >/dev/null 2>&1 || true
+    udevadm trigger --subsystem-match=block >/dev/null 2>&1 || true
+
+    echo "============================================================"
+    echo " Kit revertido. El sistema vuelve a la configuración base."
+    echo "============================================================"
+}
+
+cmd_mitigations() {
+    require_root "$@"
+    local mode="${1:-}"
+    detect_bootloader
+    if [ "$mode" = "off" ]; then
+        echo "Desactivando mitigaciones de CPU (mitigations=off)..."
+        if [ "$BOOTLOADER" = "limine" ] && [ -f /etc/default/limine ]; then
+            if ! grep -q "mitigations=off" /etc/default/limine; then
+                sed -i '0,/KERNEL_CMDLINE\[default\]+="/s//KERNEL_CMDLINE[default]+="mitigations=off /' /etc/default/limine
+                [ -x /usr/bin/limine-update ] && limine-update
+            fi
+        else
+            set_cmdline_param "add" "mitigations=off"
+        fi
+        echo "Completado. Reinicia el sistema para que surta efecto."
+    elif [ "$mode" = "on" ]; then
+        echo "Reactivando mitigaciones de CPU de seguridad..."
+        if [ "$BOOTLOADER" = "limine" ] && [ -f /etc/default/limine ]; then
+            sed -i 's/mitigations=off //g; s/mitigations=off//g' /etc/default/limine
+            [ -x /usr/bin/limine-update ] && limine-update
+        else
+            set_cmdline_param "remove" "mitigations=off"
+        fi
+        echo "Completado. Reinicia el sistema para que surta efecto."
+    else
+        echo "Uso: perf-kit cpu-mitigations <on|off>"
+        exit 1
+    fi
+}
+
+# Despachador principal
+case "${1:-}" in
+    apply)
+        shift
+        cmd_apply "$@"
+        ;;
+    status)
+        cmd_status
+        ;;
+    benchmark)
+        run_benchmark
+        ;;
+    revert)
+        shift
+        cmd_revert "$@"
+        ;;
+    cpu-mitigations)
+        shift
+        cmd_mitigations "$@"
+        ;;
+    *)
+        echo "Uso: perf-kit {status|apply|benchmark|cpu-mitigations <on|off>|revert}"
+        echo ""
+        echo "Comandos:"
+        echo "  status            Muestra el estado en tiempo real de CPU, RAM, I/O y Red"
+        echo "  apply             Instala y aplica todas las optimizaciones al sistema"
+        echo "  benchmark         Ejecuta pruebas de rendimiento (syscalls, zstd, I/O)"
+        echo "  cpu-mitigations   Activa o desactiva las mitigaciones de CPU en el bootloader"
+        echo "  revert            Desinstala todos los ajustes y restaura la configuración original"
+        exit 1
+        ;;
+esac

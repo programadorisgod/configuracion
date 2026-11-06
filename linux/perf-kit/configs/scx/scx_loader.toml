@@ -1,0 +1,7 @@
+# ==============================================================================
+# Linux Performance Kit - Sched-ext (BPF Scheduler) Configuration
+# ==============================================================================
+# scx_bpfland prioritiza la latencia interactiva (escritorio/navegador/IDE)
+# incluso si la compilación o procesos en segundo plano están al 100% de CPU.
+default_sched = "scx_bpfland"
+default_mode = "Auto"

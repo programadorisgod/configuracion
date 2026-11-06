@@ -1,0 +1,169 @@
+# ==============================================================================
+# CONFIGURACIÓN OPTIMIZADA DE ALACRITTY (alacritty.toml)
+# ==============================================================================
+
+[general]
+# Recarga automática de la configuración al guardar este archivo
+live_config_reload = true
+
+[window]
+# Tamaño inicial de la ventana (columnas x filas)
+dimensions = { columns = 120, lines = 32 }
+
+# Espaciado interno (padding) para que el texto no esté pegado al borde
+padding = { x = 14, y = 12 }
+dynamic_padding = true
+
+# Decoraciones de ventana: "Full" (con barra y botones de cerrar/minimizar), "None" o "Transparent"
+decorations = "Full"
+
+# Efecto de transparencia y desenfoque (blur) moderno estilo acrílico
+opacity = 0.94
+blur = true
+
+startup_mode = "Windowed"
+title = "Alacritty"
+
+[scrolling]
+# Cantidad de líneas guardadas en el historial de scroll
+history = 10000
+multiplier = 3
+
+[font]
+# Cascadia Code viene preinstalada en Windows y soporta ligaduras de código
+size = 11.5
+
+[font.normal]
+family = "Cascadia Code"
+style = "Regular"
+
+[font.bold]
+family = "Cascadia Code"
+style = "Bold"
+
+[font.italic]
+family = "Cascadia Code"
+style = "Italic"
+
+[font.bold_italic]
+family = "Cascadia Code"
+style = "Bold Italic"
+
+[cursor]
+# Cursor tipo barra ("Beam") parpadeante para edición fluida
+style = { shape = "Beam", blinking = "On" }
+blink_interval = 500
+unfocused_hollow = true
+
+[terminal.shell]
+# Iniciar con Zellij para soporte completo de pestañas, splits y barra de estado
+program = "zellij.exe"
+args = []
+
+# ==============================================================================
+# PALETA DE COLORES: CATPPUCCIN MOCHA (Moderna, suave y de alto contraste)
+# ==============================================================================
+[colors.primary]
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+dim_foreground = "#7f849c"
+bright_foreground = "#cdd6f4"
+
+[colors.cursor]
+text = "#1e1e2e"
+cursor = "#f5e0dc"
+
+[colors.vi_mode_cursor]
+text = "#1e1e2e"
+cursor = "#b4befe"
+
+[colors.selection]
+text = "#1e1e2e"
+background = "#585b70"
+
+[colors.normal]
+black   = "#45475a"
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#f5c2e7"
+cyan    = "#94e2d5"
+white   = "#bac2de"
+
+[colors.bright]
+black   = "#585b70"
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#f5c2e7"
+cyan    = "#94e2d5"
+white   = "#a6adc8"
+
+[colors.dim]
+black   = "#45475a"
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#f5c2e7"
+cyan    = "#94e2d5"
+white   = "#bac2de"
+
+# ==============================================================================
+# DETECCIÓN DE URLs Y ENLACES (Clic con Ctrl para abrir en el navegador)
+# ==============================================================================
+[hints]
+alphabet = "mnhjklpoiuytrewqzxcvbasdfg"
+
+[[hints.enabled]]
+regex = '(https?://|git@|git://|ssh://|ftp://|file://)[^\u0000-\u001F\u007F-\u009F<>"\\s{-}\\^⟨⟩`]+'
+hyperlinks = true
+command = { program = "explorer" }
+post_processing = true
+mouse = { enabled = true, mods = "Control" }
+
+[mouse]
+hide_when_typing = true
+
+# ==============================================================================
+# ATAJOS DE TECLADO (SHORTCUTS)
+# ==============================================================================
+# Abrir nueva ventana rápidamente con Ctrl+Shift+N o Ctrl+Shift+T
+[[keyboard.bindings]]
+key = "N"
+mods = "Control|Shift"
+action = "CreateNewWindow"
+
+[[keyboard.bindings]]
+key = "T"
+mods = "Control|Shift"
+action = "CreateNewWindow"
+
+# Copiar y pegar
+[[keyboard.bindings]]
+key = "C"
+mods = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key = "V"
+mods = "Control|Shift"
+action = "Paste"
+
+# Zoom (Aumentar / disminuir tamaño de fuente)
+[[keyboard.bindings]]
+key = "Plus"
+mods = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key = "Minus"
+mods = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key = "Key0"
+mods = "Control"
+action = "ResetFontSize"

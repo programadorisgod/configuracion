@@ -1,0 +1,31 @@
+# ==============================================================================
+# Linux Performance Kit - Storage I/O Optimization (61-perf-kit-io.rules)
+# Universal for SATA SSDs (DRAM-less), NVMe, and HDDs across all distros
+# ==============================================================================
+
+# --- SSD SATA (SATA SSDs / eMMC) ---
+# 1. Completar interrupciones de I/O en la misma CPU (afinidad estricta de caché L1/L2)
+ACTION=="add|change", KERNEL=="sd[a-z]*|mmcblk[0-9]*", ATTR{queue/rotational}=="0", \
+    ATTR{queue/rq_affinity}="2", \
+    ATTR{queue/read_ahead_kb}="256", \
+    ATTR{queue/nomerges}="0"
+
+# 2. Asignar scheduler: adios si está disponible (kernels CachyOS/custom), o mq-deadline (distros estándar)
+ACTION=="add|change", KERNEL=="sd[a-z]*|mmcblk[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}=="*adios*", \
+    ATTR{queue/scheduler}="adios"
+
+ACTION=="add|change", KERNEL=="sd[a-z]*|mmcblk[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}!="*adios*", \
+    ATTR{queue/scheduler}="mq-deadline"
+
+# --- NVMe SSDs ---
+ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/rotational}=="0", \
+    ATTR{queue/rq_affinity}="2", \
+    ATTR{queue/read_ahead_kb}="256"
+
+ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}=="*kyber*", \
+    ATTR{queue/scheduler}="kyber"
+
+# --- Discos Mecánicos (HDD) ---
+ACTION=="add|change", KERNEL=="sd[a-z]*", ATTR{queue/rotational}=="1", \
+    ATTR{queue/scheduler}="bfq", \
+    ATTR{queue/read_ahead_kb}="1024"

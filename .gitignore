@@ -1,0 +1,7 @@
+# SO y archivos temporales
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log
+*.tmp
+*.bak

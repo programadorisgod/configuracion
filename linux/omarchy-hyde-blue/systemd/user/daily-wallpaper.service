@@ -1,0 +1,8 @@
+[Unit]
+Description=Rotate desktop wallpaper daily
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/share/omarchy/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.config/waybar/scripts/rotate-wallpaper.sh
