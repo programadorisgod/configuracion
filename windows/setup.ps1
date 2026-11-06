@@ -13,14 +13,14 @@ Write-Host "==> Configurando Alacritty..." -ForegroundColor Cyan
 if (-not (Test-Path $AlacrittyTargetDir)) {
     New-Item -ItemType Directory -Path $AlacrittyTargetDir -Force | Out-Null
 }
-Copy-Item "$ScriptDir\alacritty\alacritty.toml" "$AlacrittyTargetDir\alacritty.toml" -Force
+Copy-Item "$ScriptDir\terminal\alacritty\alacritty.toml" "$AlacrittyTargetDir\alacritty.toml" -Force
 Write-Host "    [OK] alacritty.toml instalado en $AlacrittyTargetDir" -ForegroundColor Green
 
 Write-Host "==> Configurando Zellij..." -ForegroundColor Cyan
 if (-not (Test-Path $ZellijTargetDir)) {
     New-Item -ItemType Directory -Path $ZellijTargetDir -Force | Out-Null
 }
-Copy-Item "$ScriptDir\zellij\config.kdl" "$ZellijTargetDir\config.kdl" -Force
+Copy-Item "$ScriptDir\terminal\zellij\config.kdl" "$ZellijTargetDir\config.kdl" -Force
 Write-Host "    [OK] config.kdl instalado en $ZellijTargetDir" -ForegroundColor Green
 
 # Verificación de binarios

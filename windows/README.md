@@ -24,12 +24,25 @@ winget install Alacritty.Alacritty
 winget install Zellij.Zellij
 ```
 
-## Ubicaciones de Configuración
+## Estructura
 
-| Aplicación | Ruta de Configuración |
-| :--- | :--- |
-| **Alacritty** | `%APPDATA%\alacritty\alacritty.toml` |
-| **Zellij** | `%APPDATA%\Zellij\config\config.kdl` |
+```text
+windows/
+├── terminal/
+│   ├── alacritty/
+│   │   └── alacritty.toml         # Configuración Catppuccin Mocha + Cascadia Code
+│   └── zellij/
+│       └── config.kdl             # Configuración Catppuccin + Tabs + PowerShell
+├── setup.ps1                      # Script de aprovisionamiento automatizado
+└── README.md                      # Documentación del entorno Windows
+```
+
+## Ubicaciones de Configuración en el Sistema
+
+| Aplicación | Origen en Repo | Destino en Windows |
+| :--- | :--- | :--- |
+| **Alacritty** | `terminal/alacritty/alacritty.toml` | `%APPDATA%\alacritty\alacritty.toml` |
+| **Zellij** | `terminal/zellij/config.kdl` | `%APPDATA%\Zellij\config\config.kdl` |
 
 ## Atajos de Teclado Principales
 

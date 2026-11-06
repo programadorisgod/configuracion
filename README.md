@@ -11,8 +11,9 @@ El repositorio se divide en dos áreas principales según la plataforma:
 ```text
 configuracion/
 ├── windows/
-│   ├── alacritty/                  # Emulador de terminal acelerado por GPU (OpenGL)
-│   ├── zellij/                     # Multiplexor de terminal (pestañas y paneles divididos)
+│   ├── terminal/
+│   │   ├── alacritty/              # Emulador de terminal acelerado por GPU (OpenGL)
+│   │   └── zellij/                 # Multiplexor de terminal (pestañas y paneles divididos)
 │   ├── setup.ps1                   # Script de aprovisionamiento automatizado
 │   └── README.md                   # Documentación y atajos para Windows
 │
