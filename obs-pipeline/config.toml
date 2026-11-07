@@ -1,0 +1,62 @@
+# ==============================================================================
+# Configuración Unificada de OBS Pipeline (Windows & Linux)
+# ==============================================================================
+
+[general]
+# Directorio donde se guardará el material post-procesado (subcarpetas por video)
+# Deja vacío "" para crear la subcarpeta junto al archivo de video original.
+output_dir = ""
+
+# Idioma principal de la transcripción ("es" para español, "auto" para detectar)
+language = "es"
+
+# Hilos de CPU a utilizar para Whisper (0 = Automático: total_cores - 1)
+safe_cpu_threads = 0
+
+[paths]
+# Carpeta donde OBS guarda las grabaciones crudas.
+# Si se deja vacío "", se detecta automáticamente (~/Downloads en Windows, ~/Descargas en Linux)
+obs_recordings_dir = ""
+
+[audio]
+# Diagnostica automáticamente si el micro grabó en un solo canal (L o R)
+auto_fix_channels = true
+channel_db_diff_threshold = 20.0
+
+# Filtros DSP de voz
+highpass_freq = 80
+denoise_method = "afftdn"   # "afftdn" (espectral rápido) o "arnndn" (red neuronal)
+denoise_nr = 14             # Reducción de ruido en dB
+denoise_nf = -25            # Piso de ruido estimado
+target_loudness_lufs = -16.0 # Estándar EBU R128 para podcast/YouTube
+target_true_peak = -1.5
+
+[video]
+# Recorte automático de segundos muertos en silencio al iniciar y detener la grabación
+auto_trim_silence = true
+trim_silence_db = -38.0
+trim_silence_duration = 0.8
+
+# Incrustar subtítulos soft-sub dentro del contenedor MP4 sin recodificar video
+embed_subtitles = true
+
+[subtitles]
+# faster-whisper en CPU optimizado para 8GB RAM
+model_size = "base"         # "tiny", "base", "small"
+compute_type = "int8"
+vad_filter = true           # Ignora silencios acelerando la transcripción
+
+[metadata]
+# Generación de títulos, descripción y capítulos.
+# Si GEMINI_API_KEY no está configurada, utiliza el extractor heurístico offline local.
+gemini_api_key = ""
+gemini_model = "gemini-2.5-flash"
+
+[thumbnail]
+# Proveedor principal para miniaturas: "gflow" (Google Flow con gflow-cli) o "fallback" (local)
+provider = "gflow"
+gflow_model = "nano2"       # Nano Banana 2.1 (gratuito, sin gasto de créditos de video)
+aspect = "16:9"
+
+# Plantilla maestra de prompt para Google Flow
+prompt_template = """2D flat vector YouTube thumbnail, 16:9 aspect ratio. [{TECNOLOGIA}] tutorial theme. On the left side, bold large headline text reading "[{TITULAR_PRINCIPAL}]" with vibrant orange-yellow gradient fill and thick outline, directly above "[{SUBTITULO_BANNER}]" in crisp white text inside a clean electric blue pill banner. Absolutely no extra badges, no secondary stickers, no "100% práctico" or "desde cero" text. On the right side, {SUJETO_DERECHA}. Behind it, a single clean glowing [{ICONO_LOGO}] emblem. Deep midnight blue background, clean composition, high contrast, vibrant electric blue and bright orange neon accents, bold outlines, minimal visual clutter, sharp graphic design."""

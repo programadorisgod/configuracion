@@ -5,3 +5,14 @@ Desktop.ini
 *.log
 *.tmp
 *.bak
+
+# Entornos virtuales, jaulas y cachés de Python
+.venv/
+.jail/
+__pycache__/
+*.pyc
+.python-version
+*.egg-info/
+dist/
+build/
+

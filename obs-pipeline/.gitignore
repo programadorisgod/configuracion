@@ -1,0 +1,8 @@
+.venv/
+.jail/
+__pycache__/
+*.pyc
+.python-version
+*.egg-info/
+dist/
+build/
