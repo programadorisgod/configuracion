@@ -18,8 +18,8 @@ dynamic_padding = true
 decorations = "Full"
 
 # Efecto de transparencia y desenfoque (blur) moderno estilo acrílico
-opacity = 0.94
-blur = true
+opacity = 1.0
+blur = false
 
 startup_mode = "Windowed"
 title = "Alacritty"
@@ -30,23 +30,23 @@ history = 10000
 multiplier = 3
 
 [font]
-# Cascadia Code viene preinstalada en Windows y soporta ligaduras de código
+# Consolas viene preinstalada en Windows y soporta ligaduras de código
 size = 11.5
 
 [font.normal]
-family = "Cascadia Code"
+family = "Consolas"
 style = "Regular"
 
 [font.bold]
-family = "Cascadia Code"
+family = "Consolas"
 style = "Bold"
 
 [font.italic]
-family = "Cascadia Code"
+family = "Consolas"
 style = "Italic"
 
 [font.bold_italic]
-family = "Cascadia Code"
+family = "Consolas"
 style = "Bold Italic"
 
 [cursor]
@@ -57,7 +57,7 @@ unfocused_hollow = true
 
 [terminal.shell]
 # Iniciar con Zellij para soporte completo de pestañas, splits y barra de estado
-program = "zellij.exe"
+program = "powershell.exe"
 args = []
 
 # ==============================================================================

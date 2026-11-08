@@ -59,4 +59,17 @@ if (-not $hasZellij) {
     Write-Host "    [OK] Zellij detectado e instalado." -ForegroundColor Green
 }
 
+# Acceso directo de Alacritty en el Escritorio
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+$alacrittyExe = "C:\Program Files\Alacritty\alacritty.exe"
+if (Test-Path $alacrittyExe) {
+    $wscript = New-Object -ComObject WScript.Shell
+    $sc = $wscript.CreateShortcut((Join-Path $desktopPath "Alacritty.lnk"))
+    $sc.TargetPath = $alacrittyExe
+    $sc.WorkingDirectory = $env:USERPROFILE
+    $sc.Description = "Alacritty Terminal Emulator"
+    $sc.Save()
+    Write-Host "    [OK] Acceso directo de Alacritty creado en el Escritorio." -ForegroundColor Green
+}
+
 Write-Host "`n==> Despliegue finalizado con exito." -ForegroundColor Green
