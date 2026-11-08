@@ -1,30 +1,53 @@
-# Entorno de Terminal en Windows
+# 🪟 Entorno de Terminal en Windows
 
-Configuración de alto rendimiento para emulador de terminal en Windows basada en **Alacritty** (GPU accelerated) y el multiplexor **Zellij** (gestión de pestañas y paneles).
+Configuración de alto rendimiento para terminal en Windows basada en **Alacritty** (acelerado por GPU mediante OpenGL) y el multiplexor **Zellij** (gestión de pestañas, divisiones de pantalla y sesiones).
 
-## Componentes
+---
 
-- **Alacritty v0.17+**: Renderizado por hardware con OpenGL, paleta Catppuccin Mocha, tipografía Cascadia Code con ligaduras y transparencia con desenfoque de ventana.
-- **Zellij v0.45+**: Multiplexor de terminal en Rust que provee pestañas superiores, divisiones de paneles y soporte completo de ratón.
-- **PowerShell**: Intérprete por defecto dentro de las sesiones.
+## ✨ Componentes y Características
 
-## Instalación Rápida
+- **Alacritty v0.17+**:
+  - Renderizado ultrarrápido por hardware (GPU OpenGL).
+  - Paleta oficial **Catppuccin Mocha** (alto contraste, descanso visual).
+  - Tipografía **Cascadia Code** con soporte nativo para ligaduras de programación (`=>`, `===`, `!=`).
+  - Transparencia (94%) y efecto de desenfoque de ventana (*acrylic blur*).
+  - Detección interactiva de hipervínculos (abre enlaces en tu navegador con `Ctrl + Clic`).
+- **Zellij v0.45+**:
+  - Multiplexor moderno escrito en Rust integrado como shell por defecto.
+  - Barra de pestañas superior interactiva.
+  - Creación ilimitada de paneles verticales y horizontales (*splits*).
+  - Soporte completo de ratón (selección, clic para cambiar panel, scroll).
+- **PowerShell**: Intérprete por defecto dentro de cada panel o sesión.
 
-Ejecuta el script de aprovisionamiento en una ventana de PowerShell:
+---
+
+## 🚀 Instalación y Despliegue Rápido
+
+### 1. Despliegue Automatizado (Recomendado)
+Abre PowerShell en este directorio y ejecuta:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\setup.ps1
 ```
 
-O si necesitas instalar los paquetes desde cero mediante Windows Package Manager (`winget`):
+> [!TIP]
+> Si aún no tienes Alacritty o Zellij instalados, puedes añadir el parámetro `-InstallPackages` para que el script los descargue e instale automáticamente mediante `winget`:
+> ```powershell
+> .\setup.ps1 -InstallPackages
+> ```
+
+### 2. Instalación Manual vía Windows Package Manager (`winget`)
+Si prefieres instalar los binarios manualmente:
 
 ```powershell
 winget install Alacritty.Alacritty
 winget install Zellij.Zellij
 ```
 
-## Estructura
+---
+
+## 📂 Estructura y Destinos de Configuración
 
 ```text
 windows/
@@ -37,31 +60,49 @@ windows/
 └── README.md                      # Documentación del entorno Windows
 ```
 
-## Ubicaciones de Configuración en el Sistema
-
-| Aplicación | Origen en Repo | Destino en Windows |
+| Aplicación | Origen en Repositorio | Destino en Windows |
 | :--- | :--- | :--- |
 | **Alacritty** | `terminal/alacritty/alacritty.toml` | `%APPDATA%\alacritty\alacritty.toml` |
 | **Zellij** | `terminal/zellij/config.kdl` | `%APPDATA%\Zellij\config\config.kdl` |
 
-## Atajos de Teclado Principales
+---
 
-### Pestañas (Zellij)
-- `Alt + n`: Nueva pestaña
-- `Alt + →` / `Alt + ←`: Cambiar entre pestañas
-- `Ctrl + t` luego `x`: Cerrar pestaña actual
-- `Ctrl + t` luego `r`: Renombrar pestaña
+## ⌨️ Atajos de Teclado Principales
 
-### Paneles Divididos (Splits)
-- `Alt + r`: Dividir panel verticalmente (a la derecha)
-- `Alt + d`: Dividir panel horizontalmente (abajo)
-- `Alt + Flechas`: Mover foco entre paneles
-- `Alt + f`: Alternar pantalla completa del panel actual
-- `Alt + x`: Cerrar panel activo
+### 📑 Pestañas (Zellij)
+| Atajo | Acción |
+| :--- | :--- |
+| `Alt + n` | Crear nueva pestaña |
+| `Alt + →` / `Alt + ←` | Cambiar entre pestañas |
+| `Ctrl + t` luego `x` | Cerrar pestaña activa |
+| `Ctrl + t` luego `r` | Renombrar pestaña activa |
 
-### Alacritty
-- `Ctrl + Shift + T` / `Ctrl + Shift + N`: Nueva ventana
-- `Ctrl + Shift + C`: Copiar
-- `Ctrl + Shift + V`: Pegar
-- `Ctrl + [+]` / `Ctrl + [-]`: Aumentar o reducir tamaño de texto
-- `Ctrl + Clic`: Abrir hipervínculo en el navegador web
+### 🔲 Paneles Divididos (Splits en Zellij)
+| Atajo | Acción |
+| :--- | :--- |
+| `Alt + r` | Dividir panel verticalmente (a la derecha) |
+| `Alt + d` | Dividir panel horizontalmente (abajo) |
+| `Alt + Flechas` | Mover foco entre paneles (`←`, `↑`, `↓`, `→`) |
+| `Alt + f` | Alternar pantalla completa del panel actual |
+| `Alt + x` | Cerrar panel activo |
+| `Alt + +` / `Alt + -` | Aumentar / reducir tamaño del panel activo |
+
+### 🖥️ Alacritty
+| Atajo | Acción |
+| :--- | :--- |
+| `Ctrl + Shift + T` | Abrir nueva ventana |
+| `Ctrl + Shift + N` | Abrir nueva ventana |
+| `Ctrl + Shift + C` | Copiar selección al portapapeles |
+| `Ctrl + Shift + V` | Pegar desde el portapapeles |
+| `Ctrl + [+]` / `Ctrl + [-]` | Aumentar / disminuir tamaño de fuente |
+| `Ctrl + [0]` | Restablecer tamaño de fuente original |
+| `Ctrl + Clic Izquierdo` | Abrir hipervínculo en el navegador predeterminado |
+
+---
+
+## 🔍 Solución de Problemas
+
+- **La terminal no arranca tras instalar Alacritty**:
+  Asegúrate de que `zellij.exe` se encuentra en tu variable de entorno `PATH`. Tras la instalación de winget, se recomienda cerrar y reabrir la consola para refrescar el PATH del sistema.
+- **Caracteres o iconos raros**:
+  Verifica que tienes instalada la fuente `Cascadia Code` (incluida en Windows 10/11) o cualquier Nerd Font compatible.
