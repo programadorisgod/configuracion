@@ -1,9 +1,15 @@
 # ==============================================================================
-# Script de Despliegue de Configuración para Windows
+# Script de Despliegue de Configuracion para Windows
 # ==============================================================================
 # Instala y enlaza las configuraciones de Alacritty y Zellij en %APPDATA%
+param(
+    [switch]$InstallPackages
+)
 
 $ErrorActionPreference = "Stop"
+
+# Refrescar PATH de Machine y User en la sesion actual
+$env:PATH = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $AlacrittyTargetDir = "$env:APPDATA\alacritty"
@@ -23,34 +29,60 @@ if (-not (Test-Path $ZellijTargetDir)) {
 Copy-Item "$ScriptDir\terminal\zellij\config.kdl" "$ZellijTargetDir\config.kdl" -Force
 Write-Host "    [OK] config.kdl instalado en $ZellijTargetDir" -ForegroundColor Green
 
-# Verificación de binarios
-Write-Host "==> Verificando aplicaciones instaladas..." -ForegroundColor Cyan
-if (-not (Get-Command alacritty -ErrorAction SilentlyContinue)) {
-    Write-Host "    [AVISO] Alacritty no se encuentra en el PATH. Puedes instalarlo con:" -ForegroundColor Yellow
-    Write-Host "            winget install Alacritty.Alacritty" -ForegroundColor Yellow
-} else {
-    Write-Host "    [OK] Alacritty detectado." -ForegroundColor Green
+# Verificacion e instalacion de paquetes
+Write-Host "==> Verificando aplicaciones de terminal..." -ForegroundColor Cyan
+
+# Asegurar enlace de Zellij al PATH si existe localmente
+$zellijExe = "$env:LOCALAPPDATA\Zellij\zellij.exe"
+$wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+if (Test-Path $zellijExe) {
+    if (Test-Path $wingetLinks -and -not (Test-Path "$wingetLinks\zellij.exe")) {
+        cmd /c mklink /H "$wingetLinks\zellij.exe" "$zellijExe" 2>$null
+    }
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*AppData\Local\Zellij*") {
+        [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$env:LOCALAPPDATA\Zellij", "User")
+    }
 }
 
-if (-not (Get-Command zellij -ErrorAction SilentlyContinue)) {
-    $zellijDefaultDir = "$env:LOCALAPPDATA\Zellij"
-    $zellijExe = "$zellijDefaultDir\zellij.exe"
-    $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
-    if (Test-Path $zellijExe) {
-        if (Test-Path $wingetLinks -and -not (Test-Path "$wingetLinks\zellij.exe")) {
-            cmd /c mklink /H "$wingetLinks\zellij.exe" "$zellijExe" 2>$null
-        }
-        $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-        if ($userPath -notlike "*$zellijDefaultDir*") {
-            [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$zellijDefaultDir", "User")
-        }
-        Write-Host "    [OK] Zellij detectado y enlazado al PATH." -ForegroundColor Green
+$hasAlacritty = [bool](Get-Command alacritty -ErrorAction SilentlyContinue) -or (Test-Path "C:\Program Files\Alacritty\alacritty.exe")
+$hasZellij = [bool](Get-Command zellij -ErrorAction SilentlyContinue) -or (Test-Path $zellijExe)
+
+if (-not $hasAlacritty) {
+    if ($InstallPackages) {
+        Write-Host "    Instalando Alacritty mediante winget..." -ForegroundColor Yellow
+        winget install --id Alacritty.Alacritty -e --accept-source-agreements --accept-package-agreements --silent
     } else {
-        Write-Host "    [AVISO] Zellij no se encuentra en el PATH. Puedes instalarlo con:" -ForegroundColor Yellow
+        Write-Host "    [AVISO] Alacritty no detectado. Puedes instalarlo con:" -ForegroundColor Yellow
+        Write-Host "            winget install Alacritty.Alacritty" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "    [OK] Alacritty detectado e instalado." -ForegroundColor Green
+}
+
+if (-not $hasZellij) {
+    if ($InstallPackages) {
+        Write-Host "    Instalando Zellij mediante winget..." -ForegroundColor Yellow
+        winget install --id Zellij.Zellij -e --accept-source-agreements --accept-package-agreements --silent
+    } else {
+        Write-Host "    [AVISO] Zellij no detectado. Puedes instalarlo con:" -ForegroundColor Yellow
         Write-Host "            winget install Zellij.Zellij" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "    [OK] Zellij detectado." -ForegroundColor Green
+    Write-Host "    [OK] Zellij detectado e instalado." -ForegroundColor Green
 }
 
-Write-Host "`n==> Despliegue finalizado con éxito." -ForegroundColor Green
+# Acceso directo de Alacritty en el Escritorio
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+$alacrittyExe = "C:\Program Files\Alacritty\alacritty.exe"
+if (Test-Path $alacrittyExe) {
+    $wscript = New-Object -ComObject WScript.Shell
+    $sc = $wscript.CreateShortcut((Join-Path $desktopPath "Alacritty.lnk"))
+    $sc.TargetPath = $alacrittyExe
+    $sc.WorkingDirectory = $env:USERPROFILE
+    $sc.Description = "Alacritty Terminal Emulator"
+    $sc.Save()
+    Write-Host "    [OK] Acceso directo de Alacritty creado en el Escritorio." -ForegroundColor Green
+}
+
+Write-Host "`n==> Despliegue finalizado con exito." -ForegroundColor Green
