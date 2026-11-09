@@ -33,8 +33,22 @@ if (-not (Get-Command alacritty -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Get-Command zellij -ErrorAction SilentlyContinue)) {
-    Write-Host "    [AVISO] Zellij no se encuentra en el PATH. Puedes instalarlo con:" -ForegroundColor Yellow
-    Write-Host "            winget install Zellij.Zellij" -ForegroundColor Yellow
+    $zellijDefaultDir = "$env:LOCALAPPDATA\Zellij"
+    $zellijExe = "$zellijDefaultDir\zellij.exe"
+    $wingetLinks = "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+    if (Test-Path $zellijExe) {
+        if (Test-Path $wingetLinks -and -not (Test-Path "$wingetLinks\zellij.exe")) {
+            cmd /c mklink /H "$wingetLinks\zellij.exe" "$zellijExe" 2>$null
+        }
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        if ($userPath -notlike "*$zellijDefaultDir*") {
+            [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$zellijDefaultDir", "User")
+        }
+        Write-Host "    [OK] Zellij detectado y enlazado al PATH." -ForegroundColor Green
+    } else {
+        Write-Host "    [AVISO] Zellij no se encuentra en el PATH. Puedes instalarlo con:" -ForegroundColor Yellow
+        Write-Host "            winget install Zellij.Zellij" -ForegroundColor Yellow
+    }
 } else {
     Write-Host "    [OK] Zellij detectado." -ForegroundColor Green
 }
