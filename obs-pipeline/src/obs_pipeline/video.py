@@ -5,19 +5,20 @@ from obs_pipeline.hardware import find_binary
 
 
 def detect_silence_trim(
-    video_path: Path,
-    silence_db: float = -38.0,
+    target_file: Path,
+    silence_db: float = -45.0,
     silence_dur: float = 0.8,
     max_start_trim: float = 15.0,
 ) -> tuple[float, float | None]:
     """
-    Detecta segundos de silencio al inicio y final del video usando silencedetect.
+    Detecta segundos de silencio al inicio y final del audio/video usando silencedetect.
+    Para máxima precisión contra ruido de fondo, se recomienda pasar el archivo de audio post-DSP.
     Retorna (trim_start_segundos, trim_end_segundos).
     """
     ffmpeg_bin = find_binary("ffmpeg")
     cmd = [
         ffmpeg_bin,
-        "-i", str(video_path),
+        "-i", str(target_file),
         "-af", f"silencedetect=noise={silence_db}dB:d={silence_dur}",
         "-f", "null",
         "-"
@@ -52,6 +53,23 @@ def detect_silence_trim(
                 end_trim = last_silence
 
     return start_trim, end_trim
+
+
+def extract_quick_audio(video_path: Path, output_audio: Path) -> Path:
+    """Extrae rápidamente el audio en 16kHz mono sin alterar el video (para Whisper)."""
+    ffmpeg_bin = find_binary("ffmpeg")
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i", str(video_path),
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "16000",
+        "-ac", "1",
+        str(output_audio),
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    return output_audio
 
 
 def remux_final_video(

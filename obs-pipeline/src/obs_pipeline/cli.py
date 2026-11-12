@@ -26,7 +26,7 @@ from obs_pipeline.hardware import (
     send_notification,
 )
 from obs_pipeline.audio import process_audio
-from obs_pipeline.video import detect_silence_trim, remux_final_video
+from obs_pipeline.video import detect_silence_trim, remux_final_video, extract_quick_audio
 from obs_pipeline.subtitles import generate_subtitles
 from obs_pipeline.metadata import generate_metadata, save_metadata_package
 from obs_pipeline.thumbnail import create_thumbnails, check_gflow_auth
@@ -113,11 +113,78 @@ def gflow_login():
     run_sandboxed_gflow(["auth", "login", "--browser", "chrome"], timeout=300, interactive=True)
 
 
+def _run_publish_flow(video_path: Path, target_dir: Path, lang: str | None = None) -> None:
+    """Flujo de publicación para videos ya editados: transcripción + metadatos agy + 3 miniaturas."""
+    cfg = load_config()
+    video_stem = video_path.stem
+
+    click.echo(click.style(f"\n🎬 Iniciando pipeline de publicación (Modo B - Video Editado): {video_path.name}", fg="cyan", bold=True))
+    click.echo(f"📂 Carpeta de entrega: {target_dir}")
+
+    # 1. Extracción rápida de audio de referencia para Whisper (sin alterar video)
+    click.echo("\n[1/4] 🎙️ Extrayendo pista de audio de referencia para Whisper (sin alterar el video editado)...")
+    ref_audio = target_dir / "audio_referencia.wav"
+    extract_quick_audio(video_path, ref_audio)
+    click.echo(click.style("  [OK] Pista 16kHz mono extraída para análisis acústico", fg="green"))
+
+    # 2. Subtítulos con faster-whisper int8
+    click.echo("\n[2/4] 📝 Generando subtítulos con faster-whisper (CPU int8)...")
+    sub_cfg = cfg.get("subtitles", {})
+    language = lang or cfg.get("general", {}).get("language", "es")
+    threads = get_safe_threads(cfg.get("general", {}).get("safe_cpu_threads", 0))
+    sub_data = generate_subtitles(ref_audio, target_dir, sub_cfg, language=language, cpu_threads=threads)
+    click.echo(click.style(f"  [OK] Subtítulos exportados: .srt, .vtt y .txt ({len(sub_data['segments'])} fragmentos)", fg="green"))
+
+    # 3. Metadatos SEO y Capítulos exactos con Antigravity CLI (agy)
+    click.echo("\n[3/4] 🧠 Analizando transcripción y generando títulos SEO, capítulos exactos y prompt de miniatura...")
+    thumb_cfg = cfg.get("thumbnail", {})
+    template = thumb_cfg.get("prompt_template", "")
+    meta = generate_metadata(
+        video_stem,
+        sub_data["segments"],
+        sub_data["full_text"],
+        template,
+        transcript_txt_path=sub_data["txt_path"],
+    )
+    meta_doc = save_metadata_package(target_dir, meta)
+    click.echo(click.style(f"  [OK] Paquete guardado en: {meta_doc.name} (motor: {meta.get('source')})", fg="green"))
+
+    # 4. Set global de 3 variantes de miniatura
+    click.echo("\n[4/4] 🎨 Diseñando miniaturas (3 variantes: Widgets IA, Personaje IA, Local con fotograma real)...")
+    thumbs = create_thumbnails(video_path, target_dir, meta, thumb_cfg)
+    for k, p in thumbs.items():
+        click.echo(click.style(f"  [OK] Miniatura ({k}): {p.name}", fg="green"))
+
+    send_notification("OBS Pipeline", f"Video editado {video_path.name} procesado y listo.")
+    click.echo(click.style("\n✨ ¡Proceso completado con éxito! Todo el material está listo para publicar en YouTube.\n", fg="green", bold=True))
+
+
 @main.command()
 @click.argument("video_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--out", "-o", type=click.Path(path_type=Path), default=None, help="Directorio de salida.")
 @click.option("--lang", "-l", default=None, help="Idioma de transcripción (ej: es, en).")
-def process(video_path: Path, out: Path | None, lang: str | None):
+def publish(video_path: Path, out: Path | None, lang: str | None):
+    """Modo B: Procesa un video ya editado (transcripción + metadatos agy + 3 miniaturas sin re-editar)."""
+    cfg = load_config()
+    video_stem = video_path.stem
+    if out:
+        target_dir = out
+    elif cfg.get("general", {}).get("output_dir"):
+        target_dir = Path(cfg["general"]["output_dir"]) / f"post_{video_stem}"
+    else:
+        target_dir = video_path.parent / f"post_{video_stem}"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    _run_publish_flow(video_path, target_dir, lang=lang)
+
+
+@main.command()
+@click.argument("video_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--mode", "-m", type=click.Choice(["raw", "edited"], case_sensitive=False), default="raw", help="Modo: 'raw' (grabación cruda OBS) o 'edited' (video ya editado).")
+@click.option("--jump-cuts/--no-jump-cuts", default=None, help="Activar eliminación de pausas internas mayores a 1s en modo raw.")
+@click.option("--out", "-o", type=click.Path(path_type=Path), default=None, help="Directorio de salida.")
+@click.option("--lang", "-l", default=None, help="Idioma de transcripción (ej: es, en).")
+def process(video_path: Path, mode: str, jump_cuts: bool | None, out: Path | None, lang: str | None):
     """Procesa una grabación de OBS: audio estudio + subtítulos + video master + metadatos (agy) + miniaturas."""
     cfg = load_config()
     video_stem = video_path.stem
@@ -130,7 +197,13 @@ def process(video_path: Path, out: Path | None, lang: str | None):
         target_dir = video_path.parent / f"post_{video_stem}"
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    click.echo(click.style(f"\n🎬 Iniciando pipeline para: {video_path.name}", fg="cyan", bold=True))
+
+    if mode.lower() == "edited":
+        _run_publish_flow(video_path, target_dir, lang=lang)
+        return
+
+    # Modo A: Grabación Cruda de OBS
+    click.echo(click.style(f"\n🎬 Iniciando pipeline (Modo A - Grabación Cruda OBS): {video_path.name}", fg="cyan", bold=True))
     click.echo(f"📂 Carpeta de entrega: {target_dir}")
 
     # 1. Audio DSP Cleanup
@@ -156,9 +229,12 @@ def process(video_path: Path, out: Path | None, lang: str | None):
     start_trim = 0.0
     end_trim = None
     if vid_cfg.get("auto_trim_silence", True):
-        start_trim, end_trim = detect_silence_trim(video_path)
+        # Detección precisa de silencio post-DSP sobre el audio limpio (piso de ruido < -55dB)
+        s_db = float(vid_cfg.get("trim_silence_db", -45.0))
+        s_dur = float(vid_cfg.get("trim_silence_duration", 0.8))
+        start_trim, end_trim = detect_silence_trim(cleaned_audio, silence_db=s_db, silence_dur=s_dur)
         if start_trim > 0.0 or end_trim is not None:
-            click.echo(f"  -> Recorte de silencio aplicado: inicio={start_trim:.2f}s, fin={end_trim}")
+            click.echo(f"  -> Recorte de silencio aplicado (post-DSP): inicio={start_trim:.2f}s, fin={end_trim}")
 
     final_video = target_dir / f"{video_stem}_masterizado.mp4"
     remux_final_video(

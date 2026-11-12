@@ -32,10 +32,16 @@ target_loudness_lufs = -16.0 # Estándar EBU R128 para podcast/YouTube
 target_true_peak = -1.5
 
 [video]
-# Recorte automático de segundos muertos en silencio al iniciar y detener la grabación
+# Recorte automático de segundos muertos en silencio al iniciar y detener la grabación (modo raw)
 auto_trim_silence = true
-trim_silence_db = -38.0
+trim_silence_db = -45.0
 trim_silence_duration = 0.8
+
+# Eliminación de silencios y pausas internas intermedias (Jump-cuts automáticos)
+auto_jump_cuts = false           # Habilitar con --jump-cuts en el CLI para videos crudos
+jump_cut_silence_db = -42.0      # Umbral de silencio post-DSP
+jump_cut_min_duration = 1.0      # Silencios mayores a 1.0s se eliminan
+jump_cut_pad = 0.15              # Margen de seguridad en segundos para que la voz no se corte
 
 # Incrustar subtítulos soft-sub dentro del contenedor MP4 sin recodificar video
 embed_subtitles = true
