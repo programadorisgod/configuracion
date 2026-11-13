@@ -61,10 +61,12 @@ gemini_model = "gemini-2.5-flash"
 [thumbnail]
 # Proveedor principal para miniaturas: "gflow" (Google Flow con gflow-cli) o "fallback" (local)
 provider = "gflow"
-gflow_model = "nano2"       # Nano Banana 2.1 (gratuito, sin gasto de créditos de video)
+gflow_model = "nano-pro"       # "nano-pro", "imagen4" o "nano2"
 aspect = "16:9"
-resolution = "1920x1080"    # "1920x1080" (Full HD) o "1280x720" (YouTube estándar)
-use_hybrid_overlay = true   # Superpone tipografía vectorial supersampleada (2x Lanczos) sobre la ilustración
+width = 1920
+height = 1080
+supersample = 2                # 2x supersampling para tipografía ultra-nítida
+typography_mode = "hybrid"     # "hybrid" (texto vectorial nítido sobre arte IA) o "ai_only"
 
 # Plantilla maestra de prompt para Google Flow
 prompt_template = """2D flat vector YouTube thumbnail, 16:9 aspect ratio. [{TECNOLOGIA}] tutorial theme. On the left side, bold large headline text reading "[{TITULAR_PRINCIPAL}]" with vibrant orange-yellow gradient fill and thick outline, directly above "[{SUBTITULO_BANNER}]" in crisp white text inside a clean electric blue pill banner. Absolutely no extra badges, no secondary stickers, no "100% práctico" or "desde cero" text. On the right side, {SUJETO_DERECHA}. Behind it, a single clean glowing [{ICONO_LOGO}] emblem. Deep midnight blue background, clean composition, high contrast, vibrant electric blue and bright orange neon accents, bold outlines, minimal visual clutter, sharp graphic design."""

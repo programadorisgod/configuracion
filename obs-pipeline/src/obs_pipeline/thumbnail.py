@@ -1,4 +1,5 @@
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -83,196 +84,167 @@ def extract_video_frame(video_path: Path, output_frame_path: Path, timestamp_sec
         return False
 
 
-def _find_best_font(size: int, prefer_impact: bool = True) -> ImageFont.FreeTypeFont:
-    """Busca la tipografía más nítida disponible en el sistema (Windows/Linux)."""
-    candidates = []
-    if prefer_impact:
-        candidates.extend([
-            r"C:\Windows\Fonts\impact.ttf",
-            "impact.ttf",
-            "Impact.ttf",
-            r"C:\Windows\Fonts\arialbd.ttf",
-            "arialbd.ttf",
-            r"C:\Windows\Fonts\CascadiaCode.ttf",
-            "DejaVuSans-Bold.ttf",
-        ])
-    else:
-        candidates.extend([
-            r"C:\Windows\Fonts\arialbd.ttf",
-            "arialbd.ttf",
-            r"C:\Windows\Fonts\CascadiaCode.ttf",
-            "DejaVuSans-Bold.ttf",
-            "impact.ttf",
-        ])
-
-    for font_path in candidates:
+def _get_system_fonts(headline_size: int, sub_size: int) -> tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont]:
+    """Carga fuentes truetype robustas con soporte multiplataforma (Windows y Linux)."""
+    font_candidates = [
+        "impact.ttf",
+        "arialbd.ttf",
+        "CascadiaCode-Bold.otf",
+        "CascadiaCode.ttf",
+        "DejaVuSans-Bold.ttf",
+        "LiberationSans-Bold.ttf",
+        "Ubuntu-B.ttf",
+    ]
+    for fn in font_candidates:
         try:
-            return ImageFont.truetype(font_path, size)
+            fb = ImageFont.truetype(fn, headline_size)
+            fs = ImageFont.truetype(fn, sub_size)
+            return fb, fs
         except Exception:
             continue
-    return ImageFont.load_default()
+    return ImageFont.load_default(), ImageFont.load_default()
 
 
-def render_crisp_typography_overlay(
-    target_w: int,
-    target_h: int,
+def composite_sharp_typography(
+    base_image: Path | Image.Image,
+    output_path: Path,
     headline: str,
     subtitle: str,
-    scale: float = 2.0,
-) -> Image.Image:
-    """
-    Renderiza la tipografía en un lienzo transparente a escala 2x (supersampling)
-    y luego la reduce con filtro Lanczos para lograr bordes 100% vectoriales,
-    degradados puros (#FFE600 -> #FF5000) y cero artefactos de pixelado.
-    """
-    sw = int(target_w * scale)
-    sh = int(target_h * scale)
-    canvas = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
-
-    headline_clean = headline.strip().upper()[:12]
-    headline_pt = int(172 * scale) if len(headline_clean) <= 7 else int(136 * scale)
-    font_headline = _find_best_font(headline_pt, prefer_impact=True)
-
-    banner_clean = subtitle.strip().upper()[:20]
-    banner_pt = int(64 * scale)
-    font_banner = _find_best_font(banner_pt, prefer_impact=True)
-
-    # Coordenadas maestras en escala 2x
-    text_x = int(88 * scale)
-    text_y = int(target_h * 0.28 * scale)
-
-    # 1. Bounding box del titular
-    bbox = draw.textbbox((0, 0), headline_clean, font=font_headline)
-    tw = max(1, bbox[2] - bbox[0])
-    th = max(1, bbox[3] - bbox[1] + int(30 * scale))
-
-    # Sombra de profundidad 3D
-    shadow_ox = int(10 * scale)
-    shadow_oy = int(14 * scale)
-    shadow_rad = int(12 * scale)
-    for ox in range(-shadow_rad, shadow_rad + 1, int(3 * scale)):
-        for oy in range(-shadow_rad, shadow_rad + 1, int(3 * scale)):
-            draw.text(
-                (text_x + shadow_ox + ox, text_y + shadow_oy + oy),
-                headline_clean,
-                font=font_headline,
-                fill=(4, 8, 16, 120),
-            )
-
-    # Contorno exterior grueso afilado
-    stroke_radius = int(11 * scale)
-    for ox in range(-stroke_radius, stroke_radius + 1, int(2 * scale)):
-        for oy in range(-stroke_radius, stroke_radius + 1, int(2 * scale)):
-            if ox * ox + oy * oy <= stroke_radius * stroke_radius:
-                draw.text(
-                    (text_x + ox, text_y + oy),
-                    headline_clean,
-                    font=font_headline,
-                    fill=(16, 8, 4, 255),
-                )
-
-    # Degradado vertical puro Amarillo Solar (#FFE600) -> Naranja Intenso (#FF4800)
-    pad = int(16 * scale)
-    mask = Image.new("L", (tw + pad * 2, th + pad * 2), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.text((pad - bbox[0], pad - bbox[1]), headline_clean, font=font_headline, fill=255)
-
-    grad = Image.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
-    grad_draw = ImageDraw.Draw(grad)
-    total_h = th + pad * 2
-    for row in range(total_h):
-        t = row / max(1, total_h - 1)
-        r = 255
-        g = int(230 * (1 - t) + 72 * t)
-        b = int(10 * (1 - t))
-        grad_draw.line([(0, row), (tw + pad * 2, row)], fill=(r, g, b, 255))
-
-    canvas.paste(grad, (text_x - pad + bbox[0], text_y - pad + bbox[1]), mask)
-
-    # 2. Pastilla de subtítulo Azul Eléctrico (#0072E8)
-    banner_bbox = draw.textbbox((0, 0), banner_clean, font=font_banner)
-    bw_text = banner_bbox[2] - banner_bbox[0]
-    bh_text = banner_bbox[3] - banner_bbox[1]
-    banner_w = max(int(460 * scale), bw_text + int(96 * scale))
-    banner_h = int(108 * scale)
-    banner_y = text_y + th + int(24 * scale)
-    banner_radius = int(44 * scale)
-
-    # Sombra sutil de la pastilla
-    draw.rounded_rectangle(
-        [
-            text_x + int(4 * scale),
-            banner_y + int(8 * scale),
-            text_x + banner_w + int(4 * scale),
-            banner_y + banner_h + int(8 * scale),
-        ],
-        radius=banner_radius,
-        fill=(5, 10, 20, 150),
-    )
-
-    # Fondo azul eléctrico con borde cian brillante
-    draw.rounded_rectangle(
-        [text_x, banner_y, text_x + banner_w, banner_y + banner_h],
-        radius=banner_radius,
-        fill=(0, 114, 232, 255),
-        outline=(56, 196, 255, 255),
-        width=int(4 * scale),
-    )
-
-    # Texto blanco centrado nítido
-    bx = text_x + (banner_w - bw_text) // 2 - banner_bbox[0]
-    by = banner_y + (banner_h - bh_text) // 2 - banner_bbox[1]
-    draw.text((bx, by), banner_clean, font=font_banner, fill=(255, 255, 255, 255))
-
-    # Reducción con filtro Lanczos para anti-aliasing quirúrgico
-    return canvas.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-
-def compose_hybrid_thumbnail(
-    background_source: Image.Image | Path,
-    output_image_path: Path,
-    headline: str,
-    subtitle: str,
-    target_res: tuple[int, int] = (1920, 1080),
+    width: int = 1920,
+    height: int = 1080,
+    supersample: int = 2,
+    clean_left_vignette: bool = True,
 ) -> Path:
     """
-    Compone una miniatura Ultra-HD combinando la ilustración/fondo (IA o fotograma)
-    con el overlay tipográfico vectorial supersampleado (2x Lanczos).
-    Aplica una sutil viñeta oscura en el tercio izquierdo para garantizar legibilidad 10/10.
+    Motor tipográfico híbrido con supersampling 2x (3840x2160) y filtrado Lanczos:
+    Elimina artefactos borrosos o pixelados de las IAs generando textos vectoriales de máxima nitidez:
+    - Titular en degradado vertical amarillo-naranja (#FFE600 -> #FF4D00) con contorno oscuro y sombra suave.
+    - Pastilla azul eléctrico (#0074E8 con borde cian #38B6FF) con esquinas redondeadas matemáticas.
+    - Exportación nativa a 1920x1080 Full HD (< 2 MB) lista para YouTube.
     """
-    target_w, target_h = target_res
-    if isinstance(background_source, Path):
-        base_img = Image.open(background_source).convert("RGBA")
+    if isinstance(base_image, Path):
+        base = Image.open(base_image).convert("RGBA")
     else:
-        base_img = background_source.convert("RGBA")
+        base = base_image.convert("RGBA")
 
-    if base_img.size != (target_w, target_h):
-        base_img = base_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    # 1. Base escalada a 1920x1080 con Lanczos de alta precisión
+    base_1080 = base.resize((width, height), Image.Resampling.LANCZOS)
 
-    # Máscara de oscurecimiento suave en el tercio izquierdo (#091020 con degradado de alpha)
-    dark_mask = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-    d_draw = ImageDraw.Draw(dark_mask)
-    fade_width = int(target_w * 0.48)
-    for x in range(fade_width):
-        t = x / max(1, fade_width - 1)
-        # Transición suave polinómica: 220 a la izquierda -> 0 a la derecha
-        alpha = int(225 * ((1.0 - t) ** 1.6))
-        d_draw.line([(x, 0), (x, target_h)], fill=(9, 16, 32, alpha))
+    # 2. Lienzo 2X de supersampling
+    w_2x = width * supersample
+    h_2x = height * supersample
+    overlay_2x = Image.new("RGBA", (w_2x, h_2x), (0, 0, 0, 0))
 
-    base_img = Image.alpha_composite(base_img, dark_mask)
+    # 3. Fundido sutil en el tercio izquierdo para eliminar texto borroso previo de la IA
+    if clean_left_vignette:
+        plate = Image.new("RGBA", (w_2x, h_2x), (0, 0, 0, 0))
+        p_draw = ImageDraw.Draw(plate)
+        fade_limit = int(w_2x * 0.46)
+        fade_start = int(w_2x * 0.26)
+        for x in range(fade_limit):
+            if x < fade_start:
+                alpha = 245
+            else:
+                t = (x - fade_start) / float(fade_limit - fade_start)
+                alpha = int(245 * (1.0 - t * t))
+            p_draw.line([(x, 0), (x, h_2x)], fill=(9, 16, 32, alpha))
+        overlay_2x = Image.alpha_composite(overlay_2x, plate)
 
-    # Superponer tipografía vectorial afilada
-    overlay = render_crisp_typography_overlay(target_w, target_h, headline, subtitle, scale=2.0)
-    final_img = Image.alpha_composite(base_img, overlay).convert("RGB")
+    draw = ImageDraw.Draw(overlay_2x)
 
-    # Guardar en calidad máxima (PNG sin pérdida o JPEG 98 4:4:4)
-    if output_image_path.suffix.lower() == ".png":
-        final_img.save(str(output_image_path), "PNG", optimize=True)
+    headline_clean = headline.strip().upper()[:12]
+    # Escala de fuente dinámica según la longitud
+    base_font_size = 250 if len(headline_clean) <= 7 else (210 if len(headline_clean) <= 9 else 180)
+    font_bold, font_sub = _get_system_fonts(base_font_size, 115)
+
+    bbox_h = draw.textbbox((0, 0), headline_clean, font=font_bold)
+    hw = bbox_h[2] - bbox_h[0]
+    hh = bbox_h[3] - bbox_h[1]
+
+    text_x = int(w_2x * 0.05)  # Margen izquierdo profesional (~190px en 2x)
+    text_y = int(h_2x * 0.28)
+
+    # 4. Contorno oscuro exterior (30px en 2x = 15px en 1080p) con sombra suave
+    stroke_layer = Image.new("RGBA", (w_2x, h_2x), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(stroke_layer)
+    stroke_r = 28
+    for ox in range(-stroke_r, stroke_r + 1, 3):
+        for oy in range(-stroke_r, stroke_r + 1, 3):
+            if ox * ox + oy * oy <= stroke_r * stroke_r:
+                s_draw.text((text_x + ox, text_y + oy), headline_clean, font=font_bold, fill=(8, 12, 20, 255))
+
+    # Sombra difusa debajo del contorno
+    from PIL import ImageFilter
+    stroke_shadow = stroke_layer.filter(ImageFilter.GaussianBlur(radius=8))
+    overlay_2x = Image.alpha_composite(overlay_2x, stroke_shadow)
+    overlay_2x = Image.alpha_composite(overlay_2x, stroke_layer)
+
+    # 5. Relleno en degradado vertical amarillo-naranja
+    mask = Image.new("L", (hw + 60, hh + 60), 0)
+    m_draw = ImageDraw.Draw(mask)
+    m_draw.text((30 - bbox_h[0], 30 - bbox_h[1]), headline_clean, font=font_bold, fill=255)
+
+    grad = Image.new("RGBA", (hw + 60, hh + 60), (0, 0, 0, 0))
+    g_draw = ImageDraw.Draw(grad)
+    for r in range(hh + 60):
+        t = r / max(1, hh + 59)
+        red = 255
+        green = int(230 * (1 - t) + 77 * t)
+        blue = int(10 * (1 - t))
+        g_draw.line([(0, r), (hw + 60, r)], fill=(red, green, blue, 255))
+
+    grad_text = Image.new("RGBA", (w_2x, h_2x), (0, 0, 0, 0))
+    grad_text.paste(grad, (text_x - 30 + bbox_h[0], text_y - 30 + bbox_h[1]), mask)
+    overlay_2x = Image.alpha_composite(overlay_2x, grad_text)
+
+    # 6. Pastilla azul eléctrico para el subtítulo
+    sub_clean = subtitle.strip().upper()[:20]
+    tb = draw.textbbox((0, 0), sub_clean, font=font_sub)
+    sw = tb[2] - tb[0]
+    sh = tb[3] - tb[1]
+
+    pill_w = max(860, sw + 160)
+    pill_h = 200
+    pill_y = text_y + hh + 75
+    pill_radius = 80
+
+    pill_layer = Image.new("RGBA", (w_2x, h_2x), (0, 0, 0, 0))
+    pill_draw = ImageDraw.Draw(pill_layer)
+
+    # Sombra arrojada de la pastilla
+    pill_draw.rounded_rectangle(
+        [text_x + 8, pill_y + 14, text_x + pill_w + 8, pill_y + pill_h + 14],
+        radius=pill_radius,
+        fill=(0, 0, 0, 160),
+    )
+    # Cuerpo principal (#0074E8) con borde cian neón (#38B6FF)
+    pill_draw.rounded_rectangle(
+        [text_x, pill_y, text_x + pill_w, pill_y + pill_h],
+        radius=pill_radius,
+        fill=(0, 116, 232, 255),
+        outline=(56, 182, 255, 255),
+        width=8,
+    )
+
+    # Texto blanco nítido centrado
+    stx = text_x + (pill_w - sw) // 2
+    sty = pill_y + (pill_h - sh) // 2 - tb[1]
+    pill_draw.text((stx, sty), sub_clean, font=font_sub, fill=(255, 255, 255, 255))
+
+    overlay_2x = Image.alpha_composite(overlay_2x, pill_layer)
+
+    # 7. Reducción con Lanczos a 1920x1080 (antialiasing perfecto subpixel)
+    overlay_1080 = overlay_2x.resize((width, height), Image.Resampling.LANCZOS)
+    final_img = Image.alpha_composite(base_1080, overlay_1080)
+    final_rgb = final_img.convert("RGB")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.suffix.lower() == ".png":
+        final_rgb.save(str(output_path), "PNG", optimize=True)
     else:
-        final_img.save(str(output_image_path), "JPEG", quality=98, subsampling=0)
+        final_rgb.save(str(output_path), "JPEG", quality=98)
 
-    return output_image_path
+    return output_path
 
 
 def generate_local_thumbnail(
@@ -280,42 +252,41 @@ def generate_local_thumbnail(
     output_image_path: Path,
     headline: str,
     subtitle: str,
-    target_res: tuple[int, int] = (1920, 1080),
+    width: int = 1920,
+    height: int = 1080,
 ) -> Path:
     """
-    Genera localmente una miniatura Ultra-HD de respaldo con fondo azul medianoche (#091020),
-    trazos neón, captura representativa del video y tipografía vectorial supersampleada.
+    Genera localmente una miniatura nativa 1920x1080 Full HD con fondo azul medianoche (#091020),
+    trazos neón de alta definición, captura del 35% del video y tipografía vectorial nítida.
     """
-    width, height = target_res
     img = Image.new("RGBA", (width, height), (9, 16, 32, 255))
     draw = ImageDraw.Draw(img)
 
     neon_lines = [
-        ([(0, int(height * 0.12)), (int(width * 0.18), 0)], (0, 150, 255, 210), int(10 * width / 1920)),
-        ([(int(width * 0.12), int(height * 0.10)), (int(width * 0.22), 0)], (255, 130, 0, 190), int(6 * width / 1920)),
-        ([(int(width * 0.52), int(height * 0.16)), (int(width * 0.65), 0)], (0, 210, 255, 180), int(7 * width / 1920)),
-        ([(int(width * 0.82), int(height * 0.18)), (int(width * 0.98), 0)], (255, 140, 0, 200), int(8 * width / 1920)),
-        ([(int(width * 0.28), height), (int(width * 0.40), height - int(height * 0.18))], (0, 160, 255, 190), int(7 * width / 1920)),
-        ([(int(width * 0.42), height), (int(width * 0.54), height - int(height * 0.18))], (255, 130, 0, 210), int(8 * width / 1920)),
-        ([(int(width * 0.84), height), (width, height - int(height * 0.24))], (0, 210, 255, 210), int(10 * width / 1920)),
+        ([(0, 135), (330, 0)], (0, 150, 255, 210), 10),
+        ([(240, 105), (390, 0)], (255, 130, 0, 190), 6),
+        ([(1020, 180), (1245, 0)], (0, 210, 255, 180), 7),
+        ([(1590, 210), (1860, 0)], (255, 140, 0, 200), 9),
+        ([(525, height), (750, height - 195)], (0, 160, 255, 190), 7),
+        ([(765, height), (990, height - 195)], (255, 130, 0, 210), 9),
+        ([(1575, height), (width, height - 270)], (0, 210, 255, 210), 10),
     ]
     for coords, color, w in neon_lines:
-        draw.line(coords, fill=color, width=max(2, w))
+        draw.line(coords, fill=color, width=w)
 
-    temp_frame = output_image_path.parent / "temp_frame.png"
+    temp_frame = output_image_path.parent / "temp_frame_1080.png"
     if extract_video_frame(video_path, temp_frame):
         try:
             vf = Image.open(temp_frame).convert("RGBA")
-            vf_w = int(width * 0.46)
-            vf_h = int(vf_w * 9 / 16)
+            vf_w, vf_h = 860, 560
             vf = vf.resize((vf_w, vf_h), Image.Resampling.LANCZOS)
 
-            pos_x = width - vf_w - int(width * 0.04)
+            pos_x = width - vf_w - 70
             pos_y = (height - vf_h) // 2
-            for pad, alpha in [(12, 50), (7, 110), (3, 240)]:
+            for pad, alpha in [(14, 50), (9, 110), (4, 240)]:
                 draw.rounded_rectangle(
                     [pos_x - pad, pos_y - pad, pos_x + vf_w + pad, pos_y + vf_h + pad],
-                    radius=16,
+                    radius=20,
                     outline=(0, 210, 255, alpha),
                     width=4,
                 )
@@ -326,8 +297,17 @@ def generate_local_thumbnail(
             if temp_frame.exists():
                 temp_frame.unlink(missing_ok=True)
 
-    # Componer tipografía con el motor vectorial
-    return compose_hybrid_thumbnail(img, output_image_path, headline, subtitle, target_res=target_res)
+    # Aplica la tipografía nítida sobre la base 1080p
+    composite_sharp_typography(
+        img,
+        output_image_path,
+        headline,
+        subtitle,
+        width=width,
+        height=height,
+        clean_left_vignette=False,
+    )
+    return output_image_path
 
 
 def create_thumbnails(
@@ -337,10 +317,11 @@ def create_thumbnails(
     thumb_cfg: dict,
 ) -> dict:
     """
-    Genera el set global de 3 variantes de miniaturas para tener siempre de dónde elegir:
-    1. miniatura_1_elementos.png: IA con widgets/elementos gráficos de las herramientas del video.
-    2. miniatura_2_personaje.png: IA con desarrollador cel-shaded anime en la acción del video.
-    3. miniatura_3_local.png: Diagramación gráfica local con fotograma real del video.
+    Genera el set global de 3 variantes de miniaturas en calidad Full HD (1920x1080)
+    con motor híbrido de tipografía vectorial para eliminar cualquier pixelado o borrosidad:
+    1. miniatura_1_elementos_1080p.png: Widgets IA + tipografía nítida 1080p.
+    2. miniatura_2_personaje_1080p.png: Desarrollador anime IA + tipografía nítida 1080p.
+    3. miniatura_3_local_1080p.png: Fotograma real del video + tipografía nítida 1080p.
     """
     results = {}
     headline = meta.get("headline", "WINDOWS")
@@ -348,64 +329,76 @@ def create_thumbnails(
     tech_info = meta.get("tech_info", {})
     tecnologia = tech_info.get("tech", "Software Tutorial")
     icon = tech_info.get("icon", "modern glowing tech emblem")
-    model = thumb_cfg.get("gflow_model", "nano2")
+    model = thumb_cfg.get("gflow_model", "nano-pro")
+    target_w = thumb_cfg.get("width", 1920)
+    target_h = thumb_cfg.get("height", 1080)
 
-    res_str = thumb_cfg.get("resolution", "1920x1080").lower()
-    target_res = (1920, 1080) if "1080" in res_str else (1280, 720)
-
-    # 1. Prompt Variante 1 (Elementos temáticos / herramientas - Fondo e ilustración LIMPIOS sin texto)
+    # 1. Prompts para IA
     subject_tools = tech_info.get("subject", "three floating glowing holographic tech icons")
-    prompt_tools_clean = (
-        f"2D flat vector YouTube thumbnail background and illustration, 16:9 aspect ratio. {tecnologia} tutorial theme. "
+    prompt_tools = (
+        f"2D flat vector YouTube thumbnail, 16:9 aspect ratio. {tecnologia} tutorial theme. "
+        f"On the left side, bold large headline text reading \"{headline}\" with vibrant orange-yellow gradient fill and thick outline, "
+        f"directly above \"{subtitle}\" in crisp white text inside a clean electric blue pill banner. "
+        f"Absolutely no extra badges, no secondary stickers. "
         f"On the right side, {subject_tools}. "
         f"Behind it, a single clean glowing {icon}. "
         f"Deep midnight blue background, clean composition, high contrast, vibrant electric blue and bright orange neon accents, "
-        f"bold outlines, minimal visual clutter, sharp graphic design. "
-        f"The left 45% of the image is completely empty dark midnight blue copy space with subtle neon lines. "
-        f"ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, completely text-free background."
+        f"bold outlines, minimal visual clutter, sharp graphic design."
     )
 
-    # 2. Prompt Variante 2 (Desarrollador anime cel-shaded - Fondo e ilustración LIMPIOS sin texto)
-    prompt_character_clean = (
-        f"2D flat vector YouTube thumbnail background and illustration, 16:9 aspect ratio. {tecnologia} tutorial theme. "
+    prompt_character = (
+        f"2D flat vector YouTube thumbnail, 16:9 aspect ratio. {tecnologia} tutorial theme. "
+        f"On the left side, bold large headline text reading \"{headline}\" with vibrant orange-yellow gradient fill and thick outline, "
+        f"directly above \"{subtitle}\" in crisp white text inside a clean electric blue pill banner. "
+        f"Absolutely no extra badges, no secondary stickers. "
         f"On the right side, a 2D cel-shaded anime developer typing on a laptop with glowing code terminal and floating neon tool widgets. "
         f"Behind him, a single clean glowing {icon}. "
         f"Deep midnight blue background, clean composition, high contrast, vibrant electric blue and bright orange neon accents, "
-        f"bold outlines, minimal visual clutter, sharp graphic design. "
-        f"The left 45% of the image is completely empty dark midnight blue copy space with subtle neon lines. "
-        f"ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, completely text-free background."
+        f"bold outlines, minimal visual clutter, sharp graphic design."
     )
 
-    # Guardar ambos prompts limpios para inspección
-    (output_dir / "prompt_miniatura_v1_elementos.txt").write_text(prompt_tools_clean, encoding="utf-8")
-    (output_dir / "prompt_miniatura_v2_personaje.txt").write_text(prompt_character_clean, encoding="utf-8")
+    (output_dir / "prompt_miniatura_v1_elementos.txt").write_text(prompt_tools, encoding="utf-8")
+    (output_dir / "prompt_miniatura_v2_personaje.txt").write_text(prompt_character, encoding="utf-8")
 
-    # Intentar generar variantes IA si hay sesión activa en gflow
-    use_hybrid = thumb_cfg.get("use_hybrid_overlay", True)
-    if thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
-        p1_raw = output_dir / "temp_ia_v1.png"
-        p1_final = output_dir / "miniatura_1_elementos.png"
-        if generate_flow_thumbnail(prompt_tools_clean, p1_raw, model=model):
-            if use_hybrid:
-                compose_hybrid_thumbnail(p1_raw, p1_final, headline, subtitle, target_res=target_res)
-                p1_raw.unlink(missing_ok=True)
-            else:
-                p1_raw.replace(p1_final)
-            results["ia_elementos"] = p1_final
+    # Si hay imágenes base de IA previas o generadas por gflow, generamos la versión 1080p nítida
+    raw_ai_1 = output_dir / "miniatura_1_elementos.jpg"
+    raw_ai_1_alt = output_dir / "miniatura_1_elementos.png"
+    src_1 = raw_ai_1 if raw_ai_1.exists() else (raw_ai_1_alt if raw_ai_1_alt.exists() else None)
 
-        p2_raw = output_dir / "temp_ia_v2.png"
-        p2_final = output_dir / "miniatura_2_personaje.png"
-        if generate_flow_thumbnail(prompt_character_clean, p2_raw, model=model):
-            if use_hybrid:
-                compose_hybrid_thumbnail(p2_raw, p2_final, headline, subtitle, target_res=target_res)
-                p2_raw.unlink(missing_ok=True)
-            else:
-                p2_raw.replace(p2_final)
-            results["ia_personaje"] = p2_final
+    # Intentar generar con gflow si hay sesión activa
+    if not src_1 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
+        p1 = output_dir / "miniatura_1_elementos.png"
+        if generate_flow_thumbnail(prompt_tools, p1, model=model):
+            src_1 = p1
 
-    # Variante 3 (Siempre garantizada): Miniatura local con fotograma real y composición vectorial Ultra-HD
-    local_path = output_dir / "miniatura_3_local.png"
-    generate_local_thumbnail(video_path, local_path, headline, subtitle, target_res=target_res)
-    results["local_fotograma"] = local_path
+    if src_1 and src_1.exists():
+        out_v1_1080 = output_dir / "miniatura_1_elementos_1080p.png"
+        composite_sharp_typography(src_1, out_v1_1080, headline, subtitle, width=target_w, height=target_h)
+        results["ia_elementos_1080p"] = out_v1_1080
+
+    raw_ai_2 = output_dir / "miniatura_2_personaje.jpg"
+    raw_ai_2_alt = output_dir / "miniatura_2_personaje.png"
+    src_2 = raw_ai_2 if raw_ai_2.exists() else (raw_ai_2_alt if raw_ai_2_alt.exists() else None)
+
+    if not src_2 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
+        p2 = output_dir / "miniatura_2_personaje.png"
+        if generate_flow_thumbnail(prompt_character, p2, model=model):
+            src_2 = p2
+
+    if src_2 and src_2.exists():
+        out_v2_1080 = output_dir / "miniatura_2_personaje_1080p.png"
+        composite_sharp_typography(src_2, out_v2_1080, headline, subtitle, width=target_w, height=target_h)
+        results["ia_personaje_1080p"] = out_v2_1080
+
+    # Variante 3 (Siempre garantizada en 1920x1080)
+    local_path = output_dir / "miniatura_3_local_1080p.png"
+    generate_local_thumbnail(video_path, local_path, headline, subtitle, width=target_w, height=target_h)
+    results["local_fotograma_1080p"] = local_path
+
+    # Copia de compatibilidad
+    compat_local = output_dir / "miniatura_3_local.png"
+    if not compat_local.exists() or compat_local != local_path:
+        shutil.copyfile(local_path, compat_local)
+        results["local_fotograma"] = compat_local
 
     return results
