@@ -310,6 +310,32 @@ def generate_local_thumbnail(
     return output_image_path
 
 
+def upscale_and_clarify_thumbnail(
+    src_image: Path,
+    output_path: Path,
+    target_w: int = 1920,
+    target_h: int = 1080,
+) -> Path:
+    """
+    Escala la miniatura de la IA a 1920x1080 Full HD con filtrado Lanczos y máscara de enfoque
+    (UnsharpMask) para erradicar cualquier borrosidad o pixelado en YouTube, sin duplicar textos.
+    """
+    from PIL import ImageFilter, ImageEnhance
+
+    im = Image.open(src_image).convert("RGB")
+    im_1080 = im.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    sharp = im_1080.filter(ImageFilter.UnsharpMask(radius=1.5, percent=125, threshold=2))
+    enhancer = ImageEnhance.Sharpness(sharp)
+    sharp = enhancer.enhance(1.1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.suffix.lower() == ".png":
+        sharp.save(str(output_path), "PNG", optimize=True)
+    else:
+        sharp.save(str(output_path), "JPEG", quality=98, subsampling=0)
+    return output_path
+
+
 def create_thumbnails(
     video_path: Path,
     output_dir: Path,
@@ -318,10 +344,10 @@ def create_thumbnails(
 ) -> dict:
     """
     Genera el set global de 3 variantes de miniaturas en calidad Full HD (1920x1080)
-    con motor híbrido de tipografía vectorial para eliminar cualquier pixelado o borrosidad:
-    1. miniatura_1_elementos_1080p.png: Widgets IA + tipografía nítida 1080p.
-    2. miniatura_2_personaje_1080p.png: Desarrollador anime IA + tipografía nítida 1080p.
-    3. miniatura_3_local_1080p.png: Fotograma real del video + tipografía nítida 1080p.
+    con máxima nitidez y sin duplicar textos:
+    1. miniatura_1_elementos.jpg: Widgets IA en 1920x1080 (Lanczos + UnsharpMask 4:4:4).
+    2. miniatura_2_personaje.jpg: Desarrollador anime IA en 1920x1080 (Lanczos + UnsharpMask 4:4:4).
+    3. miniatura_3_local.png: Fotograma real del video + tipografía nítida 1080p.
     """
     results = {}
     headline = meta.get("headline", "WINDOWS")
@@ -360,45 +386,45 @@ def create_thumbnails(
     (output_dir / "prompt_miniatura_v1_elementos.txt").write_text(prompt_tools, encoding="utf-8")
     (output_dir / "prompt_miniatura_v2_personaje.txt").write_text(prompt_character, encoding="utf-8")
 
-    # Si hay imágenes base de IA previas o generadas por gflow, generamos la versión 1080p nítida
-    raw_ai_1 = output_dir / "miniatura_1_elementos.jpg"
-    raw_ai_1_alt = output_dir / "miniatura_1_elementos.png"
-    src_1 = raw_ai_1 if raw_ai_1.exists() else (raw_ai_1_alt if raw_ai_1_alt.exists() else None)
+    # Variante 1: Buscar archivo crudo generado por IA y procesar a 1080p
+    raw_ai_1 = output_dir / "miniatura_1_elementos_raw.jpg"
+    if not raw_ai_1.exists():
+        raw_candidates = list(output_dir.glob("miniatura_1_elementos*.jpg")) + list(output_dir.glob("miniatura_1_elementos*.png"))
+        raw_ai_1 = raw_candidates[0] if raw_candidates else None
 
-    # Intentar generar con gflow si hay sesión activa
-    if not src_1 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
-        p1 = output_dir / "miniatura_1_elementos.png"
+    if not raw_ai_1 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
+        p1 = output_dir / "miniatura_1_elementos_raw.jpg"
         if generate_flow_thumbnail(prompt_tools, p1, model=model):
-            src_1 = p1
+            raw_ai_1 = p1
 
-    if src_1 and src_1.exists():
-        out_v1_1080 = output_dir / "miniatura_1_elementos_1080p.png"
-        composite_sharp_typography(src_1, out_v1_1080, headline, subtitle, width=target_w, height=target_h)
-        results["ia_elementos_1080p"] = out_v1_1080
+    if raw_ai_1 and raw_ai_1.exists():
+        out_v1_jpg = output_dir / "miniatura_1_elementos.jpg"
+        out_v1_png = output_dir / "miniatura_1_elementos.png"
+        upscale_and_clarify_thumbnail(raw_ai_1, out_v1_jpg, target_w=target_w, target_h=target_h)
+        upscale_and_clarify_thumbnail(raw_ai_1, out_v1_png, target_w=target_w, target_h=target_h)
+        results["ia_elementos"] = out_v1_jpg
 
-    raw_ai_2 = output_dir / "miniatura_2_personaje.jpg"
-    raw_ai_2_alt = output_dir / "miniatura_2_personaje.png"
-    src_2 = raw_ai_2 if raw_ai_2.exists() else (raw_ai_2_alt if raw_ai_2_alt.exists() else None)
+    # Variante 2: Buscar archivo crudo generado por IA y procesar a 1080p
+    raw_ai_2 = output_dir / "miniatura_2_personaje_raw.jpg"
+    if not raw_ai_2.exists():
+        raw_candidates_2 = list(output_dir.glob("miniatura_2_personaje*.jpg")) + list(output_dir.glob("miniatura_2_personaje*.png"))
+        raw_ai_2 = raw_candidates_2[0] if raw_candidates_2 else None
 
-    if not src_2 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
-        p2 = output_dir / "miniatura_2_personaje.png"
+    if not raw_ai_2 and thumb_cfg.get("provider", "gflow") == "gflow" and check_gflow_auth():
+        p2 = output_dir / "miniatura_2_personaje_raw.jpg"
         if generate_flow_thumbnail(prompt_character, p2, model=model):
-            src_2 = p2
+            raw_ai_2 = p2
 
-    if src_2 and src_2.exists():
-        out_v2_1080 = output_dir / "miniatura_2_personaje_1080p.png"
-        composite_sharp_typography(src_2, out_v2_1080, headline, subtitle, width=target_w, height=target_h)
-        results["ia_personaje_1080p"] = out_v2_1080
+    if raw_ai_2 and raw_ai_2.exists():
+        out_v2_jpg = output_dir / "miniatura_2_personaje.jpg"
+        out_v2_png = output_dir / "miniatura_2_personaje.png"
+        upscale_and_clarify_thumbnail(raw_ai_2, out_v2_jpg, target_w=target_w, target_h=target_h)
+        upscale_and_clarify_thumbnail(raw_ai_2, out_v2_png, target_w=target_w, target_h=target_h)
+        results["ia_personaje"] = out_v2_jpg
 
-    # Variante 3 (Siempre garantizada en 1920x1080)
-    local_path = output_dir / "miniatura_3_local_1080p.png"
+    # Variante 3 (Local con fotograma real en 1920x1080)
+    local_path = output_dir / "miniatura_3_local.png"
     generate_local_thumbnail(video_path, local_path, headline, subtitle, width=target_w, height=target_h)
-    results["local_fotograma_1080p"] = local_path
-
-    # Copia de compatibilidad
-    compat_local = output_dir / "miniatura_3_local.png"
-    if not compat_local.exists() or compat_local != local_path:
-        shutil.copyfile(local_path, compat_local)
-        results["local_fotograma"] = compat_local
+    results["local_fotograma"] = local_path
 
     return results
