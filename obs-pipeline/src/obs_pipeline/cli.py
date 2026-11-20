@@ -31,6 +31,14 @@ from obs_pipeline.subtitles import generate_subtitles
 from obs_pipeline.metadata import generate_metadata, save_metadata_package
 from obs_pipeline.thumbnail import create_thumbnails, check_gflow_auth
 from obs_pipeline.security import run_sandboxed_gflow, get_gflow_jail_dir, PINNED_GFLOW_VERSION
+from obs_pipeline.shorts import (
+    parse_time_str,
+    detect_viral_moments,
+    extract_clip_audio,
+    transcribe_words_for_short,
+    generate_dynamic_ass,
+    render_vertical_short,
+)
 
 
 def load_config(config_path: Path | None = None) -> dict:
@@ -345,3 +353,122 @@ def watch(watch_dir: Path | None):
             click.echo(f"Error procesando {p.name}: {e}")
 
     start_watching(watch_dir, _on_new_video)
+
+
+@main.command()
+@click.argument("video_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--auto", is_flag=True, default=False, help="Detecta y genera automáticamente los mejores 1 a 3 shorts con agy.")
+@click.option("--start", default=None, help="Tiempo de inicio manual (ej: 02:11 o 131).")
+@click.option("--end", default=None, help="Tiempo de fin manual (ej: 03:00 o 180).")
+@click.option("--hook", default=None, help="Titular gancho superior (ej: '¡EL MEJOR TRUCO DE WINDOWS!').")
+@click.option("--count", "-n", default=3, type=int, help="Cantidad de shorts a generar en modo --auto (default: 3).")
+@click.option("--out", "-o", type=click.Path(path_type=Path), default=None, help="Directorio de salida.")
+def short(
+    video_path: Path,
+    auto: bool,
+    start: str | None,
+    end: str | None,
+    hook: str | None,
+    count: int,
+    out: Path | None,
+):
+    """Genera YouTube Shorts / TikToks / Reels verticales (9:16 1080x1920) a partir de un video."""
+    cfg = load_config()
+    video_stem = video_path.stem
+    post_parent = video_path.parent / f"post_{video_stem}"
+
+    if out:
+        target_dir = out
+    elif post_parent.exists():
+        target_dir = post_parent / "shorts"
+    else:
+        target_dir = video_path.parent / f"post_{video_stem}" / "shorts"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    click.echo(click.style(f"\n📱 Iniciando Generador de Shorts (9:16): {video_path.name}", fg="cyan", bold=True))
+    click.echo(f"📂 Carpeta de entrega: {target_dir}")
+
+    # Determinar fragmentos a procesar
+    items_to_render = []
+    if start and end:
+        s_sec = parse_time_str(start)
+        e_sec = parse_time_str(end)
+        h_title = hook or "¡TRUCO RECOMENDADO!"
+        items_to_render.append({
+            "title_hook": h_title,
+            "start_sec": s_sec,
+            "end_sec": e_sec,
+            "viral_reason": "Corte manual solicitado por el usuario.",
+        })
+    else:
+        # Modo automático o detección
+        txt_path = post_parent / "transcripcion.txt"
+        if not txt_path.exists():
+            click.echo("\n[1/3] 🎙️ Extrayendo transcripción acústica para detección de ganchos virales...")
+            ref_audio = target_dir / "temp_detect_audio.wav"
+            extract_quick_audio(video_path, ref_audio)
+            sub_cfg = cfg.get("subtitles", {})
+            sub_data = generate_subtitles(ref_audio, target_dir, sub_cfg)
+            transcript_text = sub_data["full_text"]
+            if ref_audio.exists():
+                ref_audio.unlink(missing_ok=True)
+        else:
+            transcript_text = txt_path.read_text(encoding="utf-8")
+
+        click.echo("\n[1/3] 🧠 Detectando los mejores momentos virales con Antigravity CLI (agy)...")
+        detected = detect_viral_moments(transcript_text, target_count=count)
+        click.echo(f"  -> Se detectaron {len(detected)} momentos de alto impacto.")
+        for idx, item in enumerate(detected):
+            s_sec = parse_time_str(item["start_time"])
+            e_sec = parse_time_str(item["end_time"])
+            items_to_render.append({
+                "title_hook": item["title_hook"],
+                "start_sec": s_sec,
+                "end_sec": e_sec,
+                "viral_reason": item["viral_reason"],
+            })
+
+    # Renderizar cada Short
+    click.echo(f"\n[2/3] ✂️ Renderizando {len(items_to_render)} Short(s) en 1080x1920 con fondo desenfocado...")
+    summary_md = ["# YouTube Shorts & TikToks Generados\n"]
+
+    for idx, item in enumerate(items_to_render):
+        s_sec = item["start_sec"]
+        e_sec = item["end_sec"]
+        dur = e_sec - s_sec
+        h_title = item["title_hook"]
+        safe_slug = re.sub(r"[^\w]+", "_", h_title.lower()).strip("_")[:25]
+        out_short = target_dir / f"short_{idx + 1}_{safe_slug}.mp4"
+        temp_audio = target_dir / f"temp_short_{idx + 1}.wav"
+        temp_ass = target_dir / f"temp_short_{idx + 1}.ass"
+
+        click.echo(f"\n  🎬 [Short {idx + 1}/{len(items_to_render)}]: '{h_title}' ({s_sec:.1f}s -> {e_sec:.1f}s, dur: {dur:.1f}s)")
+
+        # 1. Extraer audio del clip para subtítulos dinámicos
+        extract_clip_audio(video_path, temp_audio, s_sec, e_sec)
+
+        # 2. Transcripción con word timestamps
+        words = transcribe_words_for_short(temp_audio)
+
+        # 3. Generar archivo .ass con subtítulos dinámicos estilo TikTok
+        generate_dynamic_ass(words, h_title, dur, temp_ass)
+
+        # 4. Renderizar 1080x1920 con blur y subtítulos
+        render_vertical_short(video_path, s_sec, e_sec, h_title, out_short, ass_subtitles_path=temp_ass)
+
+        # Limpiar temporales
+        if temp_audio.exists():
+            temp_audio.unlink(missing_ok=True)
+        if temp_ass.exists():
+            temp_ass.unlink(missing_ok=True)
+
+        click.echo(click.style(f"    [OK] Short vertical listo: {out_short.name}", fg="green"))
+        summary_md.append(f"### Short {idx + 1}: {h_title}\n")
+        summary_md.append(f"- **Archivo:** `{out_short.name}`\n")
+        summary_md.append(f"- **Rango:** `{s_sec:.1f}s` a `{e_sec:.1f}s` ({dur:.1f}s)\n")
+        summary_md.append(f"- **Por qué funciona:** {item['viral_reason']}\n\n")
+
+    summary_file = target_dir / "shorts_info.md"
+    summary_file.write_text("\n".join(summary_md), encoding="utf-8")
+    click.echo(click.style(f"\n[3/3] ✨ ¡Todos los Shorts están listos en: {target_dir}!\n", fg="green", bold=True))
+

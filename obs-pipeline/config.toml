@@ -70,3 +70,16 @@ typography_mode = "hybrid"     # "hybrid" (texto vectorial nítido sobre arte IA
 
 # Plantilla maestra de prompt para Google Flow
 prompt_template = """2D flat vector YouTube thumbnail, 16:9 aspect ratio. [{TECNOLOGIA}] tutorial theme. On the left side, bold large headline text reading "[{TITULAR_PRINCIPAL}]" with vibrant orange-yellow gradient fill and thick outline, directly above "[{SUBTITULO_BANNER}]" in crisp white text inside a clean electric blue pill banner. Absolutely no extra badges, no secondary stickers, no "100% práctico" or "desde cero" text. On the right side, {SUJETO_DERECHA}. Behind it, a single clean glowing [{ICONO_LOGO}] emblem. Deep midnight blue background, clean composition, high contrast, vibrant electric blue and bright orange neon accents, bold outlines, minimal visual clutter, sharp graphic design."""
+
+
+[shorts]
+# Duración objetivo para Shorts automáticos (en segundos)
+min_duration = 30
+max_duration = 58
+
+# Estilo visual 9:16
+blur_radius = 20
+hook_font = "Impact"
+caption_font = "Arial"
+highlight_color = "&H00E6FF&"  # Amarillo neón (#FFE600 en formato ASS BGR)
+text_outline_width = 4
